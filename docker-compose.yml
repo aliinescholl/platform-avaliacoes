@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  # ------------------------------------------------------------
+  # Banco de Dados Relacional: PostgreSQL 16
+  # ------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: avaliacoes-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-evaluations_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/app/seeds/employees_dump.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - evaluations-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d evaluations_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ------------------------------------------------------------
+  # Backend API: Python 3.11 + FastAPI + SQLAlchemy
+  # ------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: avaliacoes-backend
+    restart: always
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@postgres:5432/evaluations_db
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    networks:
+      - evaluations-network
+
+  # ------------------------------------------------------------
+  # Frontend Web: React + TypeScript + Tailwind + Nginx
+  # ------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: avaliacoes-frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+    networks:
+      - evaluations-network
+
+networks:
+  evaluations-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
